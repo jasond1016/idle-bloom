@@ -3,6 +3,7 @@ package com.idlebloom.app.preview
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
@@ -53,6 +54,14 @@ class PreviewSlideshowActivity : AppCompatActivity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> playbackController.showPreviousPhoto()
+            KeyEvent.KEYCODE_DPAD_RIGHT -> playbackController.showNextPhoto()
+            else -> super.onKeyDown(keyCode, event)
+        }
     }
 
     private fun readConfigFromIntent(): SourceConfig {

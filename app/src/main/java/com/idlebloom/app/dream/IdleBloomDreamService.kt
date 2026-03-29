@@ -1,6 +1,7 @@
 package com.idlebloom.app.dream
 
 import android.service.dreams.DreamService
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import com.idlebloom.app.R
 import com.idlebloom.app.databinding.DreamContentBinding
@@ -26,7 +27,7 @@ class IdleBloomDreamService : DreamService() {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
 
-        setInteractive(false)
+        setInteractive(true)
         setFullscreen(true)
         setScreenBright(true)
 
@@ -66,5 +67,15 @@ class IdleBloomDreamService : DreamService() {
         scope.cancel()
         playbackController.stop()
         super.onDetachedFromWindow()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> return playbackController.showPreviousPhoto()
+                KeyEvent.KEYCODE_DPAD_RIGHT -> return playbackController.showNextPhoto()
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 }

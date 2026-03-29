@@ -32,7 +32,7 @@ class SlideshowPlaybackController(
 
     private var sourcePhotos: List<RemotePhoto> = emptyList()
     private var activePlaylist: List<RemotePhoto> = emptyList()
-    private var nextIndex: Int = 0
+    private var currentIndex: Int = -1
     private var currentConfig: SourceConfig? = null
 
     fun start(config: SourceConfig) {
@@ -63,7 +63,39 @@ class SlideshowPlaybackController(
         imageLoader = null
         sourcePhotos = emptyList()
         activePlaylist = emptyList()
-        nextIndex = 0
+        currentIndex = -1
+    }
+
+    fun showNextPhoto(): Boolean {
+        val config = currentConfig ?: return false
+        if (activePlaylist.isEmpty()) return false
+
+        if (currentIndex == -1) {
+            displayPhotoAt(index = 0)
+        } else {
+            showNextPhotoInternal(config)
+        }
+        restartPlaybackLoop(config)
+        return true
+    }
+
+    fun showPreviousPhoto(): Boolean {
+        val config = currentConfig ?: return false
+        if (activePlaylist.isEmpty()) return false
+
+        val previousIndex = when {
+            currentIndex == -1 -> activePlaylist.lastIndex
+            currentIndex > 0 -> currentIndex - 1
+            config.shuffleEnabled && sourcePhotos.isNotEmpty() -> {
+                activePlaylist = sourcePhotos.shuffled()
+                activePlaylist.lastIndex
+            }
+            else -> activePlaylist.lastIndex
+        }
+
+        displayPhotoAt(previousIndex)
+        restartPlaybackLoop(config)
+        return true
     }
 
     private fun refreshFromCacheThenRemote(config: SourceConfig) {
@@ -177,7 +209,21 @@ class SlideshowPlaybackController(
         }
 
         playbackJob = scope.launch {
+            if (activePlaylist.isEmpty()) {
+                showStatus(
+                    message = context.getString(R.string.dream_status_no_photos),
+                    loading = false,
+                    keepCaption = false
+                )
+                return@launch
+            }
+
+            if (currentIndex == -1) {
+                displayPhotoAt(index = 0)
+            }
+
             while (isActive) {
+                delay(config.intervalMillis())
                 if (activePlaylist.isEmpty()) {
                     showStatus(
                         message = context.getString(R.string.dream_status_no_photos),
@@ -186,21 +232,7 @@ class SlideshowPlaybackController(
                     )
                     return@launch
                 }
-
-                if (nextIndex >= activePlaylist.size) {
-                    nextIndex = 0
-                    if (config.shuffleEnabled) {
-                        activePlaylist = sourcePhotos.shuffled()
-                    }
-                }
-
-                val photo = activePlaylist[nextIndex]
-                binding.captionTextView.text = photo.name
-                binding.captionTextView.isVisible = true
-                displayPhoto(photo)
-                prefetchNextPhoto(nextIndex)
-                nextIndex += 1
-                delay(config.intervalMillis())
+                showNextPhotoInternal(config)
             }
         }
     }
@@ -210,11 +242,48 @@ class SlideshowPlaybackController(
         shuffle: Boolean,
         restartFromBeginning: Boolean
     ) {
+        val currentPhotoUrl = activePlaylist
+            .getOrNull(currentIndex)
+            ?.url
+
         sourcePhotos = photos.distinctBy { it.url }
         activePlaylist = if (shuffle) sourcePhotos.shuffled() else sourcePhotos
-        if (restartFromBeginning || nextIndex >= activePlaylist.size) {
-            nextIndex = 0
+        currentIndex = when {
+            activePlaylist.isEmpty() -> -1
+            restartFromBeginning -> -1
+            currentPhotoUrl == null -> -1
+            else -> activePlaylist.indexOfFirst { it.url == currentPhotoUrl }
+                .takeIf { it >= 0 }
+                ?: -1
         }
+    }
+
+    private fun restartPlaybackLoop(config: SourceConfig) {
+        playbackJob?.cancel()
+        playbackJob = null
+        startPlaybackLoopIfNeeded(config)
+    }
+
+    private fun showNextPhotoInternal(config: SourceConfig) {
+        val nextIndex = when {
+            currentIndex == -1 -> 0
+            currentIndex + 1 < activePlaylist.size -> currentIndex + 1
+            config.shuffleEnabled && sourcePhotos.isNotEmpty() -> {
+                activePlaylist = sourcePhotos.shuffled()
+                0
+            }
+            else -> 0
+        }
+        displayPhotoAt(nextIndex)
+    }
+
+    private fun displayPhotoAt(index: Int) {
+        val photo = activePlaylist.getOrNull(index) ?: return
+        currentIndex = index
+        binding.captionTextView.text = photo.name
+        binding.captionTextView.isVisible = true
+        displayPhoto(photo)
+        prefetchNextPhoto(index)
     }
 
     private fun displayPhoto(photo: RemotePhoto) {
