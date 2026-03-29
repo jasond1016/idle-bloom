@@ -26,6 +26,54 @@ class OkHttpWebDavClient(
         val authHeader = Credentials.basic(config.username, config.password)
         var lastFailure: String? = null
         val attempts = mutableListOf<PhotoDiscoveryAttempt>()
+        val discoveredPhotos = linkedMapOf<String, RemotePhoto>()
+        val pendingDirectories = ArrayDeque<String>().apply { add(directoryUrl) }
+        val visitedDirectories = linkedSetOf<String>()
+        var discoveredAnyDirectory = false
+
+        while (pendingDirectories.isNotEmpty() && visitedDirectories.size < MAX_DIRECTORY_VISITS) {
+            val nextDirectory = pendingDirectories.removeFirst()
+            val normalizedDirectory = normalizeComparableUrl(nextDirectory)
+            if (!visitedDirectories.add(normalizedDirectory)) {
+                continue
+            }
+
+            val listing = performDirectoryPropfind(
+                directoryUrl = nextDirectory,
+                authHeader = authHeader,
+                attempts = attempts
+            )
+
+            if (listing == null) {
+                continue
+            }
+
+            discoveredAnyDirectory = true
+            lastFailure = null
+
+            listing.photos.forEach { photo ->
+                discoveredPhotos.putIfAbsent(photo.url, photo)
+            }
+
+            listing.childDirectories
+                .map(::normalizeDirectoryUrl)
+                .filterNot { normalizeComparableUrl(it) in visitedDirectories }
+                .forEach(pendingDirectories::addLast)
+        }
+
+        return@withContext PhotoDiscoveryResult(
+            photos = discoveredPhotos.values.sortedBy { it.name.lowercase() },
+            attempts = attempts.toList(),
+            errorMessage = if (discoveredAnyDirectory) null else buildFailureMessage(config, lastFailure)
+        )
+    }
+
+    private fun performDirectoryPropfind(
+        directoryUrl: String,
+        authHeader: String,
+        attempts: MutableList<PhotoDiscoveryAttempt>
+    ): DirectoryListing? {
+        var lastFailureForDirectory: String? = null
 
         for (candidateUrl in candidateUrls(directoryUrl)) {
             for (candidateBody in candidateBodies()) {
@@ -41,7 +89,7 @@ class OkHttpWebDavClient(
                 try {
                     okHttpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
-                            lastFailure = "${response.code} on $candidateUrl"
+                            lastFailureForDirectory = "${response.code} on $candidateUrl"
                             attempts += PhotoDiscoveryAttempt(
                                 url = candidateUrl,
                                 requestVariant = candidateBody.label,
@@ -51,22 +99,19 @@ class OkHttpWebDavClient(
                             )
                         } else {
                             val xml = response.body?.string().orEmpty()
-                            val photos = parsePhotos(xml = xml, requestedDirectoryUrl = candidateUrl)
+                            val listing = parseDirectoryListing(xml = xml, requestedDirectoryUrl = candidateUrl)
                             attempts += PhotoDiscoveryAttempt(
                                 url = candidateUrl,
                                 requestVariant = candidateBody.label,
                                 responseCode = response.code,
                                 successful = true,
-                                detail = "Found ${photos.size} photo entries"
+                                detail = "Found ${listing.photos.size} photos and ${listing.childDirectories.size} subfolders"
                             )
-                            return@withContext PhotoDiscoveryResult(
-                                photos = photos,
-                                attempts = attempts.toList()
-                            )
+                            return listing
                         }
                     }
                 } catch (t: Throwable) {
-                    lastFailure = t.message ?: t.javaClass.simpleName
+                    lastFailureForDirectory = t.message ?: t.javaClass.simpleName
                     attempts += PhotoDiscoveryAttempt(
                         url = candidateUrl,
                         requestVariant = candidateBody.label,
@@ -78,18 +123,14 @@ class OkHttpWebDavClient(
             }
         }
 
-        return@withContext PhotoDiscoveryResult(
-            photos = emptyList(),
-            attempts = attempts.toList(),
-            errorMessage = buildFailureMessage(config, lastFailure)
-        )
+        return null
     }
 
-    private fun parsePhotos(
+    private fun parseDirectoryListing(
         xml: String,
         requestedDirectoryUrl: String
-    ): List<RemotePhoto> {
-        if (xml.isBlank()) return emptyList()
+    ): DirectoryListing {
+        if (xml.isBlank()) return DirectoryListing()
 
         val parser = Xml.newPullParser().apply {
             setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
@@ -97,6 +138,7 @@ class OkHttpWebDavClient(
         }
 
         val photos = mutableListOf<RemotePhoto>()
+        val childDirectories = mutableListOf<String>()
         var current = MutableEntry()
         var currentTag: String? = null
 
@@ -129,7 +171,11 @@ class OkHttpWebDavClient(
                 XmlPullParser.END_TAG -> {
                     val tag = parser.name.localName()
                     if (tag == "response") {
-                        current.toRemotePhoto(requestedDirectoryUrl)?.let(photos::add)
+                        when (val entry = current.toResolvedEntry(requestedDirectoryUrl)) {
+                            is ResolvedEntry.Directory -> childDirectories += entry.url
+                            is ResolvedEntry.Photo -> photos += entry.photo
+                            null -> Unit
+                        }
                         current = MutableEntry()
                     }
                     if (tag == currentTag) {
@@ -139,9 +185,12 @@ class OkHttpWebDavClient(
             }
         }
 
-        return photos
-            .distinctBy { it.url }
-            .sortedBy { it.name.lowercase() }
+        return DirectoryListing(
+            photos = photos.distinctBy { it.url },
+            childDirectories = childDirectories
+                .distinctBy(::normalizeComparableUrl)
+                .sortedBy { decodePathSegment(it.substringAfterLast('/').substringBefore('?')) }
+        )
     }
 
     private data class MutableEntry(
@@ -152,14 +201,16 @@ class OkHttpWebDavClient(
         var lastModified: String? = null,
         var isCollection: Boolean = false
     ) {
-        fun toRemotePhoto(requestedDirectoryUrl: String): RemotePhoto? {
-            if (isCollection) return null
-
+        fun toResolvedEntry(requestedDirectoryUrl: String): ResolvedEntry? {
             val hrefValue = href ?: return null
             val absoluteUrl = Companion.resolveUrl(requestedDirectoryUrl, hrefValue) ?: return null
-            val normalizedAbsolute = absoluteUrl.trimEnd('/')
-            val normalizedRequested = requestedDirectoryUrl.trimEnd('/')
+            val normalizedAbsolute = normalizeComparableUrl(absoluteUrl)
+            val normalizedRequested = normalizeComparableUrl(requestedDirectoryUrl)
             if (normalizedAbsolute == normalizedRequested) return null
+
+            if (isCollection) {
+                return ResolvedEntry.Directory(normalizeDirectoryUrl(absoluteUrl))
+            }
 
             val imageType = contentType?.startsWith("image/") == true
             val imageByExtension = IMAGE_EXTENSIONS.any { absoluteUrl.endsWith(it, ignoreCase = true) }
@@ -175,9 +226,19 @@ class OkHttpWebDavClient(
                 url = absoluteUrl,
                 contentType = contentType,
                 lastModified = lastModified
-            )
+            ).let(ResolvedEntry::Photo)
         }
     }
+
+    private sealed interface ResolvedEntry {
+        data class Photo(val photo: RemotePhoto) : ResolvedEntry
+        data class Directory(val url: String) : ResolvedEntry
+    }
+
+    private data class DirectoryListing(
+        val photos: List<RemotePhoto> = emptyList(),
+        val childDirectories: List<String> = emptyList()
+    )
 
     private fun String.localName(): String {
         return substringAfter(':')
@@ -238,6 +299,7 @@ class OkHttpWebDavClient(
     companion object {
         private val XML_MEDIA_TYPE = "application/xml; charset=utf-8".toMediaType()
         private const val USER_AGENT = "IdleBloom/0.1"
+        private const val MAX_DIRECTORY_VISITS = 512
 
         private val IMAGE_EXTENSIONS = listOf(
             ".jpg",
@@ -284,6 +346,14 @@ class OkHttpWebDavClient(
             return runCatching {
                 URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
             }.getOrDefault(value)
+        }
+
+        private fun normalizeComparableUrl(value: String): String {
+            return value.trim().trimEnd('/')
+        }
+
+        private fun normalizeDirectoryUrl(value: String): String {
+            return "${normalizeComparableUrl(value)}/"
         }
     }
 }
