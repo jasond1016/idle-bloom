@@ -19,12 +19,13 @@ class OkHttpWebDavClient(
     private val okHttpClient: OkHttpClient = OkHttpClient()
 ) : WebDavClient {
 
-    override suspend fun listPhotos(config: SourceConfig): List<RemotePhoto> = withContext(Dispatchers.IO) {
+    override suspend fun discoverPhotos(config: SourceConfig): PhotoDiscoveryResult = withContext(Dispatchers.IO) {
         require(config.isReady()) { "WebDAV config is incomplete." }
 
         val directoryUrl = config.directoryUrl()
         val authHeader = Credentials.basic(config.username, config.password)
         var lastFailure: String? = null
+        val attempts = mutableListOf<PhotoDiscoveryAttempt>()
 
         for (candidateUrl in candidateUrls(directoryUrl)) {
             for (candidateBody in candidateBodies()) {
@@ -34,21 +35,54 @@ class OkHttpWebDavClient(
                     .header("Depth", "1")
                     .header("Accept", "application/xml, text/xml, */*")
                     .header("User-Agent", USER_AGENT)
-                    .method("PROPFIND", candidateBody.toRequestBody(XML_MEDIA_TYPE))
+                    .method("PROPFIND", candidateBody.body.toRequestBody(XML_MEDIA_TYPE))
                     .build()
 
-                okHttpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        lastFailure = "${response.code} on $candidateUrl"
-                    } else {
-                        val xml = response.body?.string().orEmpty()
-                        return@withContext parsePhotos(xml = xml, requestedDirectoryUrl = candidateUrl)
+                try {
+                    okHttpClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            lastFailure = "${response.code} on $candidateUrl"
+                            attempts += PhotoDiscoveryAttempt(
+                                url = candidateUrl,
+                                requestVariant = candidateBody.label,
+                                responseCode = response.code,
+                                successful = false,
+                                detail = response.message.ifBlank { "HTTP ${response.code}" }
+                            )
+                        } else {
+                            val xml = response.body?.string().orEmpty()
+                            val photos = parsePhotos(xml = xml, requestedDirectoryUrl = candidateUrl)
+                            attempts += PhotoDiscoveryAttempt(
+                                url = candidateUrl,
+                                requestVariant = candidateBody.label,
+                                responseCode = response.code,
+                                successful = true,
+                                detail = "Found ${photos.size} photo entries"
+                            )
+                            return@withContext PhotoDiscoveryResult(
+                                photos = photos,
+                                attempts = attempts.toList()
+                            )
+                        }
                     }
+                } catch (t: Throwable) {
+                    lastFailure = t.message ?: t.javaClass.simpleName
+                    attempts += PhotoDiscoveryAttempt(
+                        url = candidateUrl,
+                        requestVariant = candidateBody.label,
+                        responseCode = null,
+                        successful = false,
+                        detail = t.message ?: t.javaClass.simpleName
+                    )
                 }
             }
         }
 
-        throw IllegalStateException(buildFailureMessage(config, lastFailure))
+        return@withContext PhotoDiscoveryResult(
+            photos = emptyList(),
+            attempts = attempts.toList(),
+            errorMessage = buildFailureMessage(config, lastFailure)
+        )
     }
 
     private fun parsePhotos(
@@ -163,13 +197,27 @@ class OkHttpWebDavClient(
         }.distinct()
     }
 
-    private fun candidateBodies(): List<String> {
+    private fun candidateBodies(): List<RequestVariant> {
         return listOf(
-            PROP_BODY,
-            ALLPROP_BODY,
-            ""
+            RequestVariant(
+                label = "prop fields",
+                body = PROP_BODY
+            ),
+            RequestVariant(
+                label = "allprop",
+                body = ALLPROP_BODY
+            ),
+            RequestVariant(
+                label = "empty body",
+                body = ""
+            )
         )
     }
+
+    private data class RequestVariant(
+        val label: String,
+        val body: String
+    )
 
     private fun buildFailureMessage(config: SourceConfig, lastFailure: String?): String {
         val details = lastFailure ?: "unknown response"

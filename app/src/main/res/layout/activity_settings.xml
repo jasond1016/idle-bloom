@@ -29,11 +29,13 @@
             android:textColor="#9FB1C1" />
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/baseUrlInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:hint="@string/field_base_url"
-            app:boxBackgroundMode="filled">
+            app:boxBackgroundMode="filled"
+            app:helperText="@string/field_base_url_helper">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/baseUrlEditText"
@@ -49,6 +51,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/usernameInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -61,7 +64,7 @@
                 android:layout_height="wrap_content"
                 android:background="@drawable/text_input_background"
                 android:imeOptions="actionNext"
-                android:inputType="textEmailAddress"
+                android:inputType="text"
                 android:minHeight="56dp"
                 android:padding="16dp"
                 android:textColor="#F5F7FA"
@@ -69,6 +72,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/passwordInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -90,11 +94,13 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/remoteDirectoryInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:hint="@string/field_remote_directory"
-            app:boxBackgroundMode="filled">
+            app:boxBackgroundMode="filled"
+            app:helperText="@string/field_remote_directory_helper">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/remoteDirectoryEditText"
@@ -110,11 +116,13 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/intervalInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:hint="@string/field_interval_seconds"
-            app:boxBackgroundMode="filled">
+            app:boxBackgroundMode="filled"
+            app:helperText="@string/field_interval_helper">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/intervalEditText"
@@ -141,33 +149,59 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:orientation="horizontal">
+            android:orientation="vertical">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/saveButton"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:minHeight="60dp"
                 android:text="@string/action_save" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/testConnectionButton"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
+                android:layout_marginTop="12dp"
+                android:minHeight="60dp"
                 android:text="@string/action_test_connection" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/previewButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="60dp"
+                android:text="@string/action_preview_slideshow" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/statusTextView"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="@string/settings_waiting"
-            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-            android:textColor="#9FB1C1" />
+            android:background="@drawable/text_input_background"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/statusTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_waiting"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="#9FB1C1" />
+
+            <TextView
+                android:id="@+id/diagnosticsTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="#C8D2DC"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
 
 </ScrollView>
