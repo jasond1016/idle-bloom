@@ -10,4 +10,8 @@ class WebDavPhotoSource(
     suspend fun listPhotos(config: SourceConfig): List<RemotePhoto> {
         return client.listPhotos(config)
     }
+
+    suspend fun deletePhoto(config: SourceConfig, photo: RemotePhoto): PhotoDeleteResult {
+        return client.deletePhoto(config, photo)
+    }
 }

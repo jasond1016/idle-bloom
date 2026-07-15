@@ -20,7 +20,7 @@ class OkHttpWebDavClient(
 ) : WebDavClient {
 
     override suspend fun discoverPhotos(config: SourceConfig): PhotoDiscoveryResult = withContext(Dispatchers.IO) {
-        require(config.isReady()) { "WebDAV config is incomplete." }
+        require(config.isReady()) { "WebDAV 配置不完整。" }
 
         val directoryUrl = config.directoryUrl()
         val authHeader = Credentials.basic(config.username, config.password)
@@ -68,6 +68,36 @@ class OkHttpWebDavClient(
         )
     }
 
+    override suspend fun deletePhoto(config: SourceConfig, photo: RemotePhoto): PhotoDeleteResult =
+        withContext(Dispatchers.IO) {
+            require(config.isReady()) { "WebDAV 配置不完整。" }
+
+            val request = Request.Builder()
+                .url(photo.url)
+                .header("Authorization", Credentials.basic(config.username, config.password))
+                .header("User-Agent", USER_AGENT)
+                .delete()
+                .build()
+
+            return@withContext try {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        PhotoDeleteResult(success = true)
+                    } else {
+                        PhotoDeleteResult(
+                            success = false,
+                            errorMessage = response.message.ifBlank { "HTTP 状态码 ${response.code}" }
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                PhotoDeleteResult(
+                    success = false,
+                    errorMessage = t.message ?: t.javaClass.simpleName
+                )
+            }
+        }
+
     private fun performDirectoryPropfind(
         directoryUrl: String,
         authHeader: String,
@@ -95,7 +125,7 @@ class OkHttpWebDavClient(
                                 requestVariant = candidateBody.label,
                                 responseCode = response.code,
                                 successful = false,
-                                detail = response.message.ifBlank { "HTTP ${response.code}" }
+                            detail = response.message.ifBlank { "HTTP 状态码 ${response.code}" }
                             )
                         } else {
                             val xml = response.body?.string().orEmpty()
@@ -105,7 +135,7 @@ class OkHttpWebDavClient(
                                 requestVariant = candidateBody.label,
                                 responseCode = response.code,
                                 successful = true,
-                                detail = "Found ${listing.photos.size} photos and ${listing.childDirectories.size} subfolders"
+                                detail = "找到 ${listing.photos.size} 张照片和 ${listing.childDirectories.size} 个子文件夹"
                             )
                             return listing
                         }
@@ -261,15 +291,15 @@ class OkHttpWebDavClient(
     private fun candidateBodies(): List<RequestVariant> {
         return listOf(
             RequestVariant(
-                label = "prop fields",
+                label = "指定属性",
                 body = PROP_BODY
             ),
             RequestVariant(
-                label = "allprop",
+                label = "全部属性",
                 body = ALLPROP_BODY
             ),
             RequestVariant(
-                label = "empty body",
+                label = "空请求体",
                 body = ""
             )
         )
@@ -281,17 +311,17 @@ class OkHttpWebDavClient(
     )
 
     private fun buildFailureMessage(config: SourceConfig, lastFailure: String?): String {
-        val details = lastFailure ?: "unknown response"
+        val details = lastFailure ?: "未知响应"
         return buildString {
-            append("WebDAV PROPFIND failed: ")
+            append("WebDAV PROPFIND 请求失败：")
             append(details)
 
             if (lastFailure?.startsWith("400") == true) {
-                append(". On NAS, the base URL is usually just the NAS host and WebDAV port, and the photo folder should include the shared folder name. Example: base URL http://192.168.1.10:80 and photo folder /Public")
+                append("。在 NAS 上，服务器地址通常只包含 NAS 主机和 WebDAV 端口；照片文件夹应包含共享文件夹名称。例如：服务器地址 http://192.168.1.10:80，照片文件夹 /Public")
             }
 
             if (config.normalizedRemoteDirectory() == "/") {
-                append(". The current photo folder is '/', which is often not a valid NAS WebDAV share path")
+                append("。当前照片文件夹为“/”，这通常不是有效的 NAS WebDAV 共享路径")
             }
         }
     }

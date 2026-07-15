@@ -57,9 +57,14 @@ class PreviewSlideshowActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (playbackController.isDeleteDialogVisible) {
+            return super.onKeyDown(keyCode, event)
+        }
         return when (keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> playbackController.showPreviousPhoto()
             KeyEvent.KEYCODE_DPAD_RIGHT -> playbackController.showNextPhoto()
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER -> playbackController.requestDeleteCurrentPhoto()
             else -> super.onKeyDown(keyCode, event)
         }
     }

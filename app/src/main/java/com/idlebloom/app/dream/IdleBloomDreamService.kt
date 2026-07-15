@@ -70,10 +70,15 @@ class IdleBloomDreamService : DreamService() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (playbackController.isDeleteDialogVisible) {
+            return super.dispatchKeyEvent(event)
+        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> return playbackController.showPreviousPhoto()
                 KeyEvent.KEYCODE_DPAD_RIGHT -> return playbackController.showNextPhoto()
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER -> return playbackController.requestDeleteCurrentPhoto()
             }
         }
         return super.dispatchKeyEvent(event)

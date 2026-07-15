@@ -227,7 +227,7 @@ class SettingsActivity : AppCompatActivity() {
                 index + 1,
                 attempt.requestVariant,
                 attempt.url,
-                attempt.responseCode?.toString() ?: "network",
+                attempt.responseCode?.toString() ?: getString(R.string.settings_diagnostics_network),
                 attempt.detail
             )
         }

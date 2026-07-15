@@ -21,4 +21,12 @@ class PhotoRepository(
         if (cached.photos.isEmpty()) return null
         return cached
     }
+
+    suspend fun deletePhoto(config: SourceConfig, photo: RemotePhoto): PhotoDeleteResult {
+        return photoSource.deletePhoto(config, photo)
+    }
+
+    suspend fun saveCachedPhotos(config: SourceConfig, photos: List<RemotePhoto>) {
+        photoIndexStore.save(config, photos)
+    }
 }

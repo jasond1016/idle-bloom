@@ -28,12 +28,26 @@ class SlideshowPlaybackController(
     private var playbackJob: Job? = null
     private var refreshJob: Job? = null
     private var transientStatusJob: Job? = null
+    private var deleteJob: Job? = null
     private var imageLoader: ImageLoader? = null
 
     private var sourcePhotos: List<RemotePhoto> = emptyList()
     private var activePlaylist: List<RemotePhoto> = emptyList()
     private var currentIndex: Int = -1
     private var currentConfig: SourceConfig? = null
+    private var pendingDeletePhoto: RemotePhoto? = null
+
+    val isDeleteDialogVisible: Boolean
+        get() = binding.deleteConfirmationOverlay.isVisible
+
+    init {
+        binding.deleteCancelButton.setOnClickListener {
+            cancelPendingDeleteConfirmation(restartPlayback = true)
+        }
+        binding.deleteConfirmButton.setOnClickListener {
+            confirmDeleteCurrentPhoto()
+        }
+    }
 
     fun start(config: SourceConfig) {
         stop()
@@ -55,6 +69,8 @@ class SlideshowPlaybackController(
     fun stop() {
         transientStatusJob?.cancel()
         transientStatusJob = null
+        deleteJob?.cancel()
+        deleteJob = null
         refreshJob?.cancel()
         refreshJob = null
         playbackJob?.cancel()
@@ -64,11 +80,14 @@ class SlideshowPlaybackController(
         sourcePhotos = emptyList()
         activePlaylist = emptyList()
         currentIndex = -1
+        pendingDeletePhoto = null
+        binding.deleteConfirmationOverlay.isVisible = false
     }
 
     fun showNextPhoto(): Boolean {
         val config = currentConfig ?: return false
         if (activePlaylist.isEmpty()) return false
+        cancelPendingDeleteConfirmation()
 
         if (currentIndex == -1) {
             displayPhotoAt(index = 0)
@@ -82,6 +101,7 @@ class SlideshowPlaybackController(
     fun showPreviousPhoto(): Boolean {
         val config = currentConfig ?: return false
         if (activePlaylist.isEmpty()) return false
+        cancelPendingDeleteConfirmation()
 
         val previousIndex = when {
             currentIndex == -1 -> activePlaylist.lastIndex
@@ -95,6 +115,20 @@ class SlideshowPlaybackController(
 
         displayPhotoAt(previousIndex)
         restartPlaybackLoop(config)
+        return true
+    }
+
+    fun requestDeleteCurrentPhoto(): Boolean {
+        val config = currentConfig ?: return false
+        val currentPhoto = activePlaylist.getOrNull(currentIndex) ?: return false
+
+        if (deleteJob?.isActive == true) {
+            return true
+        }
+
+        if (!isDeleteDialogVisible) {
+            beginDeleteConfirmation(currentPhoto)
+        }
         return true
     }
 
@@ -242,6 +276,7 @@ class SlideshowPlaybackController(
         shuffle: Boolean,
         restartFromBeginning: Boolean
     ) {
+        cancelPendingDeleteConfirmation(restartPlayback = false)
         val currentPhotoUrl = activePlaylist
             .getOrNull(currentIndex)
             ?.url
@@ -264,7 +299,13 @@ class SlideshowPlaybackController(
         startPlaybackLoopIfNeeded(config)
     }
 
+    private fun pausePlaybackLoop() {
+        playbackJob?.cancel()
+        playbackJob = null
+    }
+
     private fun showNextPhotoInternal(config: SourceConfig) {
+        cancelPendingDeleteConfirmation(restartPlayback = false)
         val nextIndex = when {
             currentIndex == -1 -> 0
             currentIndex + 1 < activePlaylist.size -> currentIndex + 1
@@ -275,6 +316,92 @@ class SlideshowPlaybackController(
             else -> 0
         }
         displayPhotoAt(nextIndex)
+    }
+
+    private fun beginDeleteConfirmation(photo: RemotePhoto) {
+        pendingDeletePhoto = photo
+        pausePlaybackLoop()
+        transientStatusJob?.cancel()
+        binding.progressBar.isVisible = false
+        binding.statusTextView.isVisible = false
+        binding.deleteConfirmationMessageTextView.text = context.getString(
+            R.string.delete_dialog_message,
+            photo.name
+        )
+        binding.deleteConfirmationOverlay.isVisible = true
+        binding.captionTextView.isVisible = true
+        binding.deleteCancelButton.post { binding.deleteCancelButton.requestFocus() }
+    }
+
+    private fun confirmDeleteCurrentPhoto() {
+        val config = currentConfig ?: return
+        val photo = pendingDeletePhoto ?: return
+        val currentPhoto = activePlaylist.getOrNull(currentIndex)
+        if (currentPhoto?.url != photo.url) {
+            cancelPendingDeleteConfirmation(restartPlayback = true)
+            return
+        }
+
+        binding.deleteConfirmationOverlay.isVisible = false
+        pausePlaybackLoop()
+        showStatus(
+            message = context.getString(R.string.dream_status_delete_deleting, photo.name),
+            loading = true,
+            keepCaption = true
+        )
+
+        deleteJob = scope.launch {
+            val result = photoRepository.deletePhoto(config, photo)
+            if (pendingDeletePhoto?.url != photo.url) {
+                restartPlaybackLoop(config)
+                return@launch
+            }
+
+            pendingDeletePhoto = null
+            if (!result.success) {
+                showTemporaryStatus(
+                    context.getString(
+                        R.string.dream_status_delete_failed,
+                        result.errorMessage ?: context.getString(R.string.error_unknown)
+                    )
+                )
+                restartPlaybackLoop(config)
+                return@launch
+            }
+
+            removeDeletedPhoto(config, photo)
+        }
+    }
+
+    private suspend fun removeDeletedPhoto(config: SourceConfig, photo: RemotePhoto) {
+        val deletedIndex = currentIndex
+        sourcePhotos = sourcePhotos.filterNot { it.url == photo.url }
+        activePlaylist = activePlaylist.filterNot { it.url == photo.url }
+        photoRepository.saveCachedPhotos(config, sourcePhotos)
+
+        if (activePlaylist.isEmpty()) {
+            currentIndex = -1
+            showStatus(
+                message = context.getString(R.string.dream_status_no_photos),
+                loading = false,
+                keepCaption = false
+            )
+            return
+        }
+
+        val nextIndex = deletedIndex.coerceIn(0, activePlaylist.lastIndex)
+        displayPhotoAt(nextIndex)
+        showTemporaryStatus(context.getString(R.string.dream_status_delete_success, photo.name))
+        restartPlaybackLoop(config)
+    }
+
+    private fun cancelPendingDeleteConfirmation(restartPlayback: Boolean = false) {
+        val config = currentConfig
+        pendingDeletePhoto = null
+        binding.deleteConfirmationOverlay.isVisible = false
+        if (restartPlayback && config != null && deleteJob?.isActive != true) {
+            restartPlaybackLoop(config)
+        }
     }
 
     private fun displayPhotoAt(index: Int) {
@@ -294,7 +421,9 @@ class SlideshowPlaybackController(
             listener(
                 onSuccess = { _, _ ->
                     binding.progressBar.isVisible = false
-                    binding.statusTextView.isVisible = false
+                    if (pendingDeletePhoto == null && deleteJob?.isActive != true) {
+                        binding.statusTextView.isVisible = false
+                    }
                 },
                 onError = { _, _ ->
                     binding.progressBar.isVisible = false
@@ -345,4 +474,5 @@ class SlideshowPlaybackController(
             binding.statusTextView.isVisible = false
         }
     }
+
 }

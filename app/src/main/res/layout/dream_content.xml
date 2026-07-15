@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#05080C">
@@ -58,5 +59,69 @@
         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
         android:textColor="#F5F7FA"
         android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/deleteConfirmationOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="360dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_margin="24dp"
+            android:background="@drawable/delete_dialog_background"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/delete_dialog_title"
+                android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+                android:textColor="#17212B" />
+
+            <TextView
+                android:id="@+id/deleteConfirmationMessageTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+                android:textColor="#3B4855" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="end"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/deleteCancelButton"
+                    android:layout_width="116dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/delete_cancel_button_background"
+                    android:gravity="center"
+                    android:text="@string/action_cancel"
+                    android:textColor="#45602A"
+                    android:textSize="18sp" />
+
+                <Button
+                    android:id="@+id/deleteConfirmButton"
+                    android:layout_width="116dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/delete_confirm_button_background"
+                    android:gravity="center"
+                    android:text="@string/action_delete"
+                    android:textColor="#17212B"
+                    android:textSize="18sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
 
 </FrameLayout>
