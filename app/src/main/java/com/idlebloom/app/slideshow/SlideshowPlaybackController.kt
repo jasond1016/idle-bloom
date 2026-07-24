@@ -22,7 +22,8 @@ class SlideshowPlaybackController(
     private val context: Context,
     private val scope: CoroutineScope,
     private val binding: DreamContentBinding,
-    private val photoRepository: PhotoRepository = PhotoRepository(context.applicationContext)
+    private val photoRepository: PhotoRepository = PhotoRepository(context.applicationContext),
+    private val onExitConfirmed: () -> Unit = {}
 ) {
 
     private var playbackJob: Job? = null
@@ -40,12 +41,24 @@ class SlideshowPlaybackController(
     val isDeleteDialogVisible: Boolean
         get() = binding.deleteConfirmationOverlay.isVisible
 
+    val isExitDialogVisible: Boolean
+        get() = binding.exitConfirmationOverlay.isVisible
+
+    val isConfirmationDialogVisible: Boolean
+        get() = isDeleteDialogVisible || isExitDialogVisible
+
     init {
         binding.deleteCancelButton.setOnClickListener {
             cancelPendingDeleteConfirmation(restartPlayback = true)
         }
         binding.deleteConfirmButton.setOnClickListener {
             confirmDeleteCurrentPhoto()
+        }
+        binding.exitCancelButton.setOnClickListener {
+            cancelExitConfirmation()
+        }
+        binding.exitConfirmButton.setOnClickListener {
+            confirmExit()
         }
     }
 
@@ -82,6 +95,7 @@ class SlideshowPlaybackController(
         currentIndex = -1
         pendingDeletePhoto = null
         binding.deleteConfirmationOverlay.isVisible = false
+        binding.exitConfirmationOverlay.isVisible = false
     }
 
     fun showNextPhoto(): Boolean {
@@ -130,6 +144,31 @@ class SlideshowPlaybackController(
             beginDeleteConfirmation(currentPhoto)
         }
         return true
+    }
+
+    fun requestExitConfirmation(): Boolean {
+        if (isConfirmationDialogVisible) {
+            return true
+        }
+
+        pausePlaybackLoop()
+        binding.exitConfirmationOverlay.isVisible = true
+        binding.exitCancelButton.post { binding.exitCancelButton.requestFocus() }
+        return true
+    }
+
+    fun cancelPendingDeleteConfirmation(restartPlayback: Boolean = false) {
+        val config = currentConfig
+        pendingDeletePhoto = null
+        binding.deleteConfirmationOverlay.isVisible = false
+        if (restartPlayback && config != null && deleteJob?.isActive != true) {
+            restartPlaybackLoop(config)
+        }
+    }
+
+    fun cancelExitConfirmation() {
+        binding.exitConfirmationOverlay.isVisible = false
+        currentConfig?.let(::restartPlaybackLoop)
     }
 
     private fun refreshFromCacheThenRemote(config: SourceConfig) {
@@ -395,13 +434,9 @@ class SlideshowPlaybackController(
         restartPlaybackLoop(config)
     }
 
-    private fun cancelPendingDeleteConfirmation(restartPlayback: Boolean = false) {
-        val config = currentConfig
-        pendingDeletePhoto = null
-        binding.deleteConfirmationOverlay.isVisible = false
-        if (restartPlayback && config != null && deleteJob?.isActive != true) {
-            restartPlaybackLoop(config)
-        }
+    private fun confirmExit() {
+        binding.exitConfirmationOverlay.isVisible = false
+        onExitConfirmed()
     }
 
     private fun displayPhotoAt(index: Int) {

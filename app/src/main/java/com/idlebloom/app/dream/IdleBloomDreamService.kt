@@ -36,7 +36,8 @@ class IdleBloomDreamService : DreamService() {
         playbackController = SlideshowPlaybackController(
             context = this,
             scope = scope,
-            binding = binding
+            binding = binding,
+            onExitConfirmed = ::finish
         )
     }
 
@@ -70,7 +71,18 @@ class IdleBloomDreamService : DreamService() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (playbackController.isDeleteDialogVisible) {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when {
+                    playbackController.isDeleteDialogVisible ->
+                        playbackController.cancelPendingDeleteConfirmation(restartPlayback = true)
+                    playbackController.isExitDialogVisible -> playbackController.cancelExitConfirmation()
+                    else -> playbackController.requestExitConfirmation()
+                }
+            }
+            return true
+        }
+        if (playbackController.isConfirmationDialogVisible) {
             return super.dispatchKeyEvent(event)
         }
         if (event.action == KeyEvent.ACTION_DOWN) {

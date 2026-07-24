@@ -37,7 +37,8 @@ class PreviewSlideshowActivity : AppCompatActivity() {
         playbackController = SlideshowPlaybackController(
             context = this,
             scope = scope,
-            binding = binding
+            binding = binding,
+            onExitConfirmed = ::finish
         )
     }
 
@@ -56,16 +57,55 @@ class PreviewSlideshowActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                handleBackPressed()
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (playbackController.isDeleteDialogVisible) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                playbackController.cancelPendingDeleteConfirmation(restartPlayback = true)
+                return true
+            }
+            return super.onKeyDown(keyCode, event)
+        }
+        if (playbackController.isExitDialogVisible) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                playbackController.cancelExitConfirmation()
+                return true
+            }
             return super.onKeyDown(keyCode, event)
         }
         return when (keyCode) {
+            KeyEvent.KEYCODE_BACK -> {
+                handleBackPressed()
+                true
+            }
             KeyEvent.KEYCODE_DPAD_LEFT -> playbackController.showPreviousPhoto()
             KeyEvent.KEYCODE_DPAD_RIGHT -> playbackController.showNextPhoto()
             KeyEvent.KEYCODE_DPAD_CENTER,
             KeyEvent.KEYCODE_ENTER -> playbackController.requestDeleteCurrentPhoto()
             else -> super.onKeyDown(keyCode, event)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        handleBackPressed()
+    }
+
+    private fun handleBackPressed() {
+        when {
+            playbackController.isDeleteDialogVisible ->
+                playbackController.cancelPendingDeleteConfirmation(restartPlayback = true)
+            playbackController.isExitDialogVisible -> playbackController.cancelExitConfirmation()
+            else -> playbackController.requestExitConfirmation()
         }
     }
 
